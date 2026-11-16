@@ -8,14 +8,14 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 
 // ---------------------------------------------------------------- constants
 const STATUS = {
-  going:     { label: "确定参与", color: "var(--going)" },
-  late:      { label: "会迟到",   color: "var(--late)" },
-  maybe:     { label: "不确定",   color: "var(--maybe)" },
-  not_going: { label: "无法参与", color: "var(--no)" },
+  going:     { label: "Going", color: "var(--going)" },
+  late:      { label: "Late",   color: "var(--late)" },
+  maybe:     { label: "Maybe",   color: "var(--maybe)" },
+  not_going: { label: "Can't go", color: "var(--no)" },
 };
 const STATUS_ORDER = ["going", "late", "maybe", "not_going"];
-const ROLE_LABEL = { owner: "创建者", admin: "管理员", member: "成员" };
-const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
+const ROLE_LABEL = { owner: "Owner", admin: "Admin", member: "Member" };
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const SLOT_MIN = 30;
 const SLOTS = 48;
 
@@ -32,7 +32,7 @@ const state = {
 };
 const isAdmin = () => state.me && (state.me.role === "owner" || state.me.role === "admin");
 const isOwner = () => state.me?.role === "owner";
-const nameOf = (id) => state.profiles.get(id)?.display_name ?? "（已删除用户）";
+const nameOf = (id) => state.profiles.get(id)?.display_name ?? "(deleted user)";
 
 // ---------------------------------------------------------------- dates
 function startOfDay(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
@@ -44,7 +44,10 @@ function sameDay(a, b) { return a.getFullYear() === b.getFullYear() && a.getMont
 const pad = (n) => String(n).padStart(2, "0");
 const hm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const fmtDate = (d) => `${d.getMonth() + 1}月${d.getDate()}日 周${WEEKDAYS[d.getDay()]}`;
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTHS_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const fmtDate = (d) => `${WEEKDAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+const fmtShort = (d) => `${MONTHS[d.getMonth()]} ${d.getDate()}`;
 const fmtDateTime = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${hm(d)}`;
 function fromInputs(dateStr, timeStr) {
   const [y, m, d] = dateStr.split("-").map(Number);
@@ -67,9 +70,9 @@ function closeModal() { if (modal.open) modal.close(); }
 modal.addEventListener("click", (e) => { if (e.target === modal || e.target.closest(".close-x")) closeModal(); });
 function friendlyError(error) {
   const m = error?.message ?? String(error);
-  if (/row-level security|permission denied/i.test(m)) return "没有权限执行此操作";
-  if (/past 3 months|next 12 months/i.test(m)) return "日程只能安排在过去 3 个月到未来 12 个月之间";
-  if (/Invalid login credentials/i.test(m)) return "用户名或密码错误";
+  if (/row-level security|permission denied/i.test(m)) return "You don't have permission to do that";
+  if (/past 3 months|next 12 months/i.test(m)) return "Events must be within the past 3 months and the next 12 months";
+  if (/Invalid login credentials/i.test(m)) return "Incorrect username or password";
   return m;
 }
 
@@ -100,7 +103,7 @@ async function boot() {
   if (!session) { $("#login-view").hidden = false; $("#app-view").hidden = true; return; }
   await loadProfiles();
   state.me = state.profiles.get(session.user.id);
-  if (!state.me) { toast("找不到账号资料，请联系管理员"); await sb.auth.signOut(); return; }
+  if (!state.me) { toast("Account profile not found — please contact an admin"); await sb.auth.signOut(); return; }
   $("#login-view").hidden = true; $("#app-view").hidden = false;
   $$("[data-admin]").forEach((el) => (el.hidden = !isAdmin()));
   $("#member-role-wrap").hidden = !isOwner();
@@ -194,13 +197,13 @@ async function renderCalendar() {
   $$("#cal-mode button").forEach((b) => b.classList.toggle("active", b.dataset.mode === state.mode));
   const c = state.cursor;
   $("#cal-title").textContent =
-    state.mode === "month" ? `${c.getFullYear()}年${c.getMonth() + 1}月`
-    : state.mode === "week" ? `${start.getFullYear()}年 ${fmtDate(start).split(" ")[0]} – ${fmtDate(addDays(end, -1)).split(" ")[0]}`
-    : `${c.getFullYear()}年 ${fmtDate(c)}`;
+    state.mode === "month" ? `${MONTHS_LONG[c.getMonth()]} ${c.getFullYear()}`
+    : state.mode === "week" ? `${fmtShort(start)} – ${fmtShort(addDays(end, -1))}, ${addDays(end, -1).getFullYear()}`
+    : `${fmtDate(c)}, ${c.getFullYear()}`;
   $("#cal-prev").disabled = viewRange(state.mode, stepCursor(-1)).end <= windowMin();
   $("#cal-next").disabled = viewRange(state.mode, stepCursor(1)).start > windowMax();
   $("#cal-hint").textContent = isAdmin()
-    ? (state.mode === "month" ? "点击某一天进入日视图，在时间格上点击或拖动即可发布日程。" : "点击或拖动 30 分钟时间格来发布日程。")
+    ? (state.mode === "month" ? "Click a day to open it, then click or drag the time blocks to post an event." : "Click or drag the 30-minute blocks to post an event.")
     : "";
   await loadEvents(start, end);
   if (seq !== renderSeq) return;
@@ -226,7 +229,7 @@ function renderMonth(start) {
     evs.slice(0, max).forEach((ev) => {
       html += `<div class="chip" data-ev="${ev.id}"><span class="t">${sameDay(ev.s, d) ? hm(ev.s) : "…"}</span>${esc(ev.title)}</div>`;
     });
-    if (evs.length > max) html += `<div class="more">+${evs.length - max} 更多</div>`;
+    if (evs.length > max) html += `<div class="more">+${evs.length - max} more</div>`;
     html += `</div>`;
   }
   html += `</div></div>`;
@@ -273,7 +276,7 @@ function renderTimeGrid(start, ndays) {
   let html = `<div class="tgrid ${isAdmin() ? "can-edit" : ""}">`;
   html += `<div class="tgrid-head" style="grid-template-columns:${cols}"><div></div>`;
   days.forEach((d) => {
-    html += `<div class="${sameDay(d, today) ? "today" : ""}" data-goto="${ymd(d)}">周${WEEKDAYS[d.getDay()]}<b>${d.getDate()}</b></div>`;
+    html += `<div class="${sameDay(d, today) ? "today" : ""}" data-goto="${ymd(d)}">${WEEKDAYS[d.getDay()]}<b>${d.getDate()}</b></div>`;
   });
   html += `</div><div class="tgrid-scroll"><div class="tgrid-body" style="grid-template-columns:${cols}">`;
   html += `<div class="hours">${Array.from({ length: 24 }, (_, h) => `<div>${h === 0 ? "" : pad(h) + ":00"}</div>`).join("")}</div>`;
@@ -351,7 +354,7 @@ function attachSlotSelection(body) {
     const startDt = new Date(y, m - 1, dd, 0, a * SLOT_MIN);
     const endDt = new Date(y, m - 1, dd, 0, (b + 1) * SLOT_MIN + (d.moved || d.mouse ? 0 : SLOT_MIN));
     paint();
-    if (!inWindow(startDt)) { toast("日程只能安排在过去 3 个月到未来 12 个月之间"); return; }
+    if (!inWindow(startDt)) { toast("Events must be within the past 3 months and the next 12 months"); return; }
     openEventForm(null, startDt, endDt);
   };
   body.onpointerup = finish;
@@ -380,33 +383,33 @@ function openEvent(id) {
     const list = rs.filter((r) => r.status === st)
       .sort((a, b) => nameOf(a.user_id).localeCompare(nameOf(b.user_id), "zh"));
     if (!list.length) return "";
-    return `<div class="who-group"><h4><span class="dot" style="background:${STATUS[st].color}"></span>${STATUS[st].label}（${list.length}）</h4><ul>${
-      list.map((r) => `<li>${esc(nameOf(r.user_id))}${st === "late" ? `（迟到约 ${r.late_minutes} 分钟）` : ""}</li>`).join("")}</ul></div>`;
+    return `<div class="who-group"><h4><span class="dot" style="background:${STATUS[st].color}"></span>${STATUS[st].label} (${list.length})</h4><ul>${
+      list.map((r) => `<li>${esc(nameOf(r.user_id))}${st === "late" ? ` (about ${r.late_minutes} min late)` : ""}</li>`).join("")}</ul></div>`;
   }).join("");
 
   openModal(`
-    <div class="modal-head"><h2>${esc(ev.title)}</h2><button class="close-x" aria-label="关闭">×</button></div>
+    <div class="modal-head"><h2>${esc(ev.title)}</h2><button class="close-x" aria-label="Close">×</button></div>
     <dl class="meta">
-      <dt>时间</dt><dd>${when}</dd>
-      ${ev.location ? `<dt>地点</dt><dd>${esc(ev.location)}</dd>` : ""}
-      ${ev.dress_code ? `<dt>着装</dt><dd>${esc(ev.dress_code)}</dd>` : ""}
-      ${ev.notes ? `<dt>备注</dt><dd>${esc(ev.notes)}</dd>` : ""}
-      <dt>发布</dt><dd>${esc(nameOf(ev.created_by))}</dd>
+      <dt>When</dt><dd>${when}</dd>
+      ${ev.location ? `<dt>Location</dt><dd>${esc(ev.location)}</dd>` : ""}
+      ${ev.dress_code ? `<dt>Dress code</dt><dd>${esc(ev.dress_code)}</dd>` : ""}
+      ${ev.notes ? `<dt>Notes</dt><dd>${esc(ev.notes)}</dd>` : ""}
+      <dt>Posted by</dt><dd>${esc(nameOf(ev.created_by))}</dd>
     </dl>
-    <div><div class="muted" style="margin-bottom:6px">我的回复</div>
+    <div><div class="muted" style="margin-bottom:6px">My response</div>
       <div class="rsvp">${STATUS_ORDER.map((st) => `<button class="btn ${mine?.status === st ? "on" : ""}" data-s="${st}">${STATUS[st].label}</button>`).join("")}</div>
       <div class="late-row" id="late-row" ${mine?.status === "late" ? "" : "hidden"} style="margin-top:8px">
-        <span class="muted">预计迟到</span><input type="number" id="late-min" min="1" max="1440" step="1" value="${mine?.late_minutes ?? ""}" placeholder="分钟" /><span class="muted">分钟</span>
-        <button class="btn primary small" id="late-save">确认</button>
+        <span class="muted">Late by</span><input type="number" id="late-min" min="1" max="1440" step="1" value="${mine?.late_minutes ?? ""}" placeholder="min" /><span class="muted">minutes</span>
+        <button class="btn primary small" id="late-save">Confirm</button>
       </div>
-      ${mine ? `<button class="btn small" id="rsvp-clear" style="margin-top:8px">撤回我的回复</button>` : ""}
+      ${mine ? `<button class="btn small" id="rsvp-clear" style="margin-top:8px">Withdraw my response</button>` : ""}
     </div>
     <details class="who">
-      <summary>出席 ${counts.going} · 迟到 ${counts.late} · 不确定 ${counts.maybe} · 无法参与 ${counts.not_going} · 未回复 ${noReply.length}</summary>
-      ${groups || `<p class="muted">还没有人回复。</p>`}
-      ${noReply.length ? `<div class="who-group"><h4><span class="dot" style="background:var(--line)"></span>未回复（${noReply.length}）</h4><ul>${noReply.map((p) => `<li>${esc(p.display_name)}</li>`).join("")}</ul></div>` : ""}
+      <summary>Going ${counts.going} · Late ${counts.late} · Maybe ${counts.maybe} · Can't go ${counts.not_going} · No reply ${noReply.length}</summary>
+      ${groups || `<p class="muted">No responses yet.</p>`}
+      ${noReply.length ? `<div class="who-group"><h4><span class="dot" style="background:var(--line)"></span>No reply (${noReply.length})</h4><ul>${noReply.map((p) => `<li>${esc(p.display_name)}</li>`).join("")}</ul></div>` : ""}
     </details>
-    ${isAdmin() ? `<div class="actions"><button class="btn danger" id="ev-del">删除</button><button class="btn" id="ev-edit">编辑</button></div>` : ""}
+    ${isAdmin() ? `<div class="actions"><button class="btn danger" id="ev-del">Delete</button><button class="btn" id="ev-edit">Edit</button></div>` : ""}
   `);
 
   const body = $("#modal-body");
@@ -420,7 +423,7 @@ function openEvent(id) {
   });
   $("#late-save", body).onclick = async () => {
     const v = parseInt($("#late-min").value, 10);
-    if (!(v >= 1 && v <= 1440)) { toast("请填写迟到分钟数（1–1440）"); return; }
+    if (!(v >= 1 && v <= 1440)) { toast("Please enter how many minutes late (1–1440)"); return; }
     await saveRsvp(ev.id, "late", v);
   };
   $("#rsvp-clear", body)?.addEventListener("click", async () => {
@@ -430,10 +433,10 @@ function openEvent(id) {
   });
   $("#ev-edit", body)?.addEventListener("click", () => openEventForm(ev));
   $("#ev-del", body)?.addEventListener("click", async () => {
-    if (!confirm(`确定删除「${ev.title}」？所有回复也会被删除。`)) return;
+    if (!confirm(`Delete "${ev.title}"? All responses will be deleted too.`)) return;
     const { error } = await sb.from("events").delete().eq("id", ev.id);
     if (error) return toast(friendlyError(error));
-    closeModal(); toast("已删除"); renderCalendar();
+    closeModal(); toast("Deleted"); renderCalendar();
   });
 }
 
@@ -442,7 +445,7 @@ async function saveRsvp(eventId, status, lateMinutes) {
     { event_id: eventId, user_id: state.me.id, status, late_minutes: lateMinutes },
     { onConflict: "event_id,user_id" });
   if (error) return toast(friendlyError(error));
-  toast("已回复：" + STATUS[status].label + (lateMinutes ? `（${lateMinutes} 分钟）` : ""));
+  toast("Response saved: " + STATUS[status].label + (lateMinutes ? ` (${lateMinutes} min)` : ""));
   await reloadEventAndReopen(eventId);
 }
 
@@ -465,22 +468,22 @@ function timeOptions(selected) {
 function openEventForm(ev, startDt, endDt) {
   const s = ev ? ev.s : startDt, e = ev ? ev.e : endDt;
   openModal(`
-    <div class="modal-head"><h2>${ev ? "编辑日程" : "发布日程"}</h2><button class="close-x" aria-label="关闭">×</button></div>
+    <div class="modal-head"><h2>${ev ? "Edit event" : "Post event"}</h2><button class="close-x" aria-label="Close">×</button></div>
     <form id="ev-form" class="form-grid" style="max-width:none;margin:0">
-      <label>活动名称 Event name *<input name="title" required maxlength="120" value="${esc(ev?.title)}" /></label>
+      <label>Event name *<input name="title" required maxlength="120" value="${esc(ev?.title)}" /></label>
       <div class="row2">
-        <label>开始日期<input type="date" name="sd" required value="${ymd(s)}" /></label>
-        <label>开始时间<select name="st">${timeOptions(hm(s))}</select></label>
+        <label>Start date<input type="date" name="sd" required value="${ymd(s)}" /></label>
+        <label>Start time<select name="st">${timeOptions(hm(s))}</select></label>
       </div>
       <div class="row2">
-        <label>结束日期<input type="date" name="ed" required value="${ymd(e)}" /></label>
-        <label>结束时间<select name="et">${timeOptions(hm(e))}</select></label>
+        <label>End date<input type="date" name="ed" required value="${ymd(e)}" /></label>
+        <label>End time<select name="et">${timeOptions(hm(e))}</select></label>
       </div>
-      <label>地点 Location<input name="location" maxlength="200" value="${esc(ev?.location)}" /></label>
-      <label>着装要求 Dress code<input name="dress_code" maxlength="120" value="${esc(ev?.dress_code)}" /></label>
-      <label>备注 Notes<textarea name="notes" rows="3" maxlength="4000">${esc(ev?.notes)}</textarea></label>
+      <label>Location<input name="location" maxlength="200" value="${esc(ev?.location)}" /></label>
+      <label>Dress code<input name="dress_code" maxlength="120" value="${esc(ev?.dress_code)}" /></label>
+      <label>Notes<textarea name="notes" rows="3" maxlength="4000">${esc(ev?.notes)}</textarea></label>
       <p class="error" id="ev-error"></p>
-      <div class="actions"><button type="button" class="btn" id="ev-cancel">取消</button><button class="btn primary" type="submit">${ev ? "保存" : "发布"}</button></div>
+      <div class="actions"><button type="button" class="btn" id="ev-cancel">Cancel</button><button class="btn primary" type="submit">${ev ? "Save" : "Post"}</button></div>
     </form>`);
   $("#ev-cancel").onclick = () => (ev ? openEvent(ev.id) : closeModal());
   $("#ev-form").onsubmit = async (evt) => {
@@ -489,9 +492,9 @@ function openEventForm(ev, startDt, endDt) {
     const start_at = fromInputs(f.sd.value, f.st.value);
     const end_at = fromInputs(f.ed.value, f.et.value);
     const err = $("#ev-error");
-    if (end_at <= start_at) { err.textContent = "结束时间必须晚于开始时间"; return; }
-    if (end_at - start_at > 7 * 86400000) { err.textContent = "单个日程不能超过 7 天"; return; }
-    if (!inWindow(start_at)) { err.textContent = "日程只能安排在过去 3 个月到未来 12 个月之间"; return; }
+    if (end_at <= start_at) { err.textContent = "End time must be after start time"; return; }
+    if (end_at - start_at > 7 * 86400000) { err.textContent = "An event can't be longer than 7 days"; return; }
+    if (!inWindow(start_at)) { err.textContent = "Events must be within the past 3 months and the next 12 months"; return; }
     const row = {
       title: f.title.value.trim(), location: f.location.value.trim(), dress_code: f.dress_code.value.trim(),
       notes: f.notes.value.trim(), start_at: start_at.toISOString(), end_at: end_at.toISOString(),
@@ -500,7 +503,7 @@ function openEventForm(ev, startDt, endDt) {
                  : sb.from("events").insert(row).select().single();
     const { data, error } = await q;
     if (error) { err.textContent = friendlyError(error); return; }
-    toast(ev ? "已保存" : "已发布");
+    toast(ev ? "Saved" : "Posted");
     state.cursor = startOfDay(start_at);
     await reloadEventAndReopen(data.id);
   };
@@ -530,9 +533,9 @@ function msgEl(m) {
   const el = document.createElement("div");
   el.className = "msg" + (mine ? " mine" : ""); el.dataset.id = m.id;
   el.innerHTML = `<div class="who">${esc(nameOf(m.user_id))} · ${hm(d)}${
-    mine || isAdmin() ? ` <button class="del" title="删除">删除</button>` : ""}</div><div class="bubble">${esc(m.body)}</div>`;
+    mine || isAdmin() ? ` <button class="del" title="Delete">Delete</button>` : ""}</div><div class="bubble">${esc(m.body)}</div>`;
   $(".del", el)?.addEventListener("click", async () => {
-    if (!confirm("删除这条消息？")) return;
+    if (!confirm("Delete this message?")) return;
     const { error } = await sb.from("messages").delete().eq("id", m.id);
     if (error) toast(friendlyError(error)); else el.remove();
   });
@@ -562,7 +565,7 @@ chatForm.addEventListener("submit", async (e) => {
 });
 
 // ================================================================= TASKS
-const TASK_STATUS = { todo: "待办", doing: "进行中", done: "已完成" };
+const TASK_STATUS = { todo: "To do", doing: "In progress", done: "Done" };
 let tasksCache = [];
 async function loadTasks() {
   const { data, error } = await sb.from("assignments").select("*").order("due_at", { ascending: true, nullsFirst: false });
@@ -571,14 +574,14 @@ async function loadTasks() {
   const now = new Date();
   const html = Object.entries(TASK_STATUS).map(([st, label]) => {
     const items = data.filter((t) => t.status === st);
-    return `<div class="task-group"><h3>${label}（${items.length}）</h3>${items.map((t) => {
+    return `<div class="task-group"><h3>${label} (${items.length})</h3>${items.map((t) => {
       const due = t.due_at ? new Date(t.due_at) : null;
       const overdue = due && due < now && st !== "done";
       return `<div class="card task" ${isAdmin() ? `data-task="${t.id}" style="cursor:pointer"` : ""}>
-        <div class="task-top"><b>${esc(t.title)}</b>${due ? `<span class="badge ${overdue ? "overdue" : ""}">截止 ${fmtDateTime(due)}</span>` : ""}</div>
-        <div class="muted">负责人：${t.assignee ? esc(nameOf(t.assignee)) : "全体"} · 发布：${esc(nameOf(t.created_by))}</div>
+        <div class="task-top"><b>${esc(t.title)}</b>${due ? `<span class="badge ${overdue ? "overdue" : ""}">Due ${fmtDateTime(due)}</span>` : ""}</div>
+        <div class="muted">Assigned to: ${t.assignee ? esc(nameOf(t.assignee)) : "Everyone"} · Posted by: ${esc(nameOf(t.created_by))}</div>
         ${t.details ? `<div class="task-details">${esc(t.details)}</div>` : ""}</div>`;
-    }).join("") || `<p class="muted">无</p>`}</div>`;
+    }).join("") || `<p class="muted">None</p>`}</div>`;
   }).join("");
   const list = $("#task-list");
   list.innerHTML = html;
@@ -589,19 +592,19 @@ function openTaskForm(t) {
   const due = t?.due_at ? new Date(t.due_at) : null;
   const people = [...state.profiles.values()];
   openModal(`
-    <div class="modal-head"><h2>${t ? "编辑任务" : "新任务"}</h2><button class="close-x" aria-label="关闭">×</button></div>
+    <div class="modal-head"><h2>${t ? "Edit task" : "New task"}</h2><button class="close-x" aria-label="Close">×</button></div>
     <form id="task-form" class="form-grid" style="max-width:none;margin:0">
-      <label>标题 *<input name="title" required maxlength="160" value="${esc(t?.title)}" /></label>
-      <label>内容<textarea name="details" rows="4" maxlength="4000">${esc(t?.details)}</textarea></label>
-      <label>负责人<select name="assignee"><option value="">全体</option>${people.map((p) =>
+      <label>Title *<input name="title" required maxlength="160" value="${esc(t?.title)}" /></label>
+      <label>Details<textarea name="details" rows="4" maxlength="4000">${esc(t?.details)}</textarea></label>
+      <label>Assigned to<select name="assignee"><option value="">Everyone</option>${people.map((p) =>
         `<option value="${p.id}" ${t?.assignee === p.id ? "selected" : ""}>${esc(p.display_name)}</option>`).join("")}</select></label>
       <div class="row2">
-        <label>截止日期<input type="date" name="dd" value="${due ? ymd(due) : ""}" /></label>
-        <label>截止时间<select name="dt">${timeOptions(due ? hm(due) : "23:30")}</select></label>
+        <label>Due date<input type="date" name="dd" value="${due ? ymd(due) : ""}" /></label>
+        <label>Due time<select name="dt">${timeOptions(due ? hm(due) : "23:30")}</select></label>
       </div>
-      <label>状态<select name="status">${Object.entries(TASK_STATUS).map(([k, v]) => `<option value="${k}" ${t?.status === k ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+      <label>Status<select name="status">${Object.entries(TASK_STATUS).map(([k, v]) => `<option value="${k}" ${t?.status === k ? "selected" : ""}>${v}</option>`).join("")}</select></label>
       <p class="error" id="task-error"></p>
-      <div class="actions">${t ? `<button type="button" class="btn danger" id="task-del">删除</button>` : ""}<button class="btn primary" type="submit">保存</button></div>
+      <div class="actions">${t ? `<button type="button" class="btn danger" id="task-del">Delete</button>` : ""}<button class="btn primary" type="submit">Save</button></div>
     </form>`);
   $("#task-form").onsubmit = async (e) => {
     e.preventDefault();
@@ -612,10 +615,10 @@ function openTaskForm(t) {
     };
     const { error } = t ? await sb.from("assignments").update(row).eq("id", t.id) : await sb.from("assignments").insert(row);
     if (error) { $("#task-error").textContent = friendlyError(error); return; }
-    closeModal(); toast("已保存"); loadTasks();
+    closeModal(); toast("Saved"); loadTasks();
   };
   $("#task-del")?.addEventListener("click", async () => {
-    if (!confirm("删除这个任务？")) return;
+    if (!confirm("Delete this task?")) return;
     const { error } = await sb.from("assignments").delete().eq("id", t.id);
     if (error) return toast(friendlyError(error));
     closeModal(); loadTasks();
@@ -636,13 +639,13 @@ async function loadMembers() {
   await loadProfiles();
   const rows = [...state.profiles.values()].sort((a, b) =>
     ({ owner: 0, admin: 1, member: 2 }[a.role] - { owner: 0, admin: 1, member: 2 }[b.role]) || a.username.localeCompare(b.username));
-  $("#member-list").innerHTML = `<div class="table-wrap"><table class="table"><thead><tr><th>显示名称</th><th>用户名</th><th>角色</th><th></th></tr></thead><tbody>${
+  $("#member-list").innerHTML = `<div class="table-wrap"><table class="table"><thead><tr><th>Display name</th><th>Username</th><th>Role</th><th></th></tr></thead><tbody>${
     rows.map((p) => {
       const canReset = isOwner() || p.role === "member" || p.id === state.me.id;
       const btns = [
-        canReset ? `<button class="btn small" data-act="reset" data-id="${p.id}">重置密码</button>` : "",
-        isOwner() && p.role !== "owner" ? `<button class="btn small" data-act="role" data-id="${p.id}">${p.role === "admin" ? "取消管理员" : "设为管理员"}</button>` : "",
-        isOwner() && p.role !== "owner" ? `<button class="btn small danger" data-act="del" data-id="${p.id}">删除</button>` : "",
+        canReset ? `<button class="btn small" data-act="reset" data-id="${p.id}">Reset password</button>` : "",
+        isOwner() && p.role !== "owner" ? `<button class="btn small" data-act="role" data-id="${p.id}">${p.role === "admin" ? "Remove admin" : "Make admin"}</button>` : "",
+        isOwner() && p.role !== "owner" ? `<button class="btn small danger" data-act="del" data-id="${p.id}">Delete</button>` : "",
       ].join(" ");
       return `<tr><td>${esc(p.display_name)}</td><td>${esc(p.username)}</td><td><span class="role ${p.role}">${ROLE_LABEL[p.role]}</span></td><td style="white-space:nowrap">${btns}</td></tr>`;
     }).join("")}</tbody></table></div>`;
@@ -652,7 +655,7 @@ $("#member-form").addEventListener("submit", async (e) => {
   const f = e.target; const err = $("#member-error"); err.textContent = "";
   try {
     await callAdmin({ action: "create", username: f.username.value.trim().toLowerCase(), password: f.password.value, role: f.role.value });
-    toast(`已创建账号 ${f.username.value.trim().toLowerCase()}`); f.reset(); loadMembers();
+    toast(`Account created: ${f.username.value.trim().toLowerCase()}`); f.reset(); loadMembers();
   } catch (ex) { err.textContent = ex.message; }
 });
 $("#member-list").addEventListener("click", async (e) => {
@@ -660,38 +663,38 @@ $("#member-list").addEventListener("click", async (e) => {
   const p = state.profiles.get(b.dataset.id);
   try {
     if (b.dataset.act === "reset") {
-      const pw = prompt(`为 ${p.display_name}（${p.username}）设置新密码（至少 8 位）：`);
+      const pw = prompt(`New password for ${p.display_name} (${p.username}), at least 8 characters:`);
       if (!pw) return;
-      await callAdmin({ action: "reset_password", user_id: p.id, password: pw }); toast("密码已重置");
+      await callAdmin({ action: "reset_password", user_id: p.id, password: pw }); toast("Password reset");
     } else if (b.dataset.act === "role") {
-      await callAdmin({ action: "set_role", user_id: p.id, role: p.role === "admin" ? "member" : "admin" }); toast("角色已更新");
+      await callAdmin({ action: "set_role", user_id: p.id, role: p.role === "admin" ? "member" : "admin" }); toast("Role updated");
     } else if (b.dataset.act === "del") {
-      if (!confirm(`确定删除账号 ${p.username}？其回复和留言也会被删除。`)) return;
-      await callAdmin({ action: "delete", user_id: p.id }); toast("账号已删除");
+      if (!confirm(`Delete account ${p.username}? Their responses and messages will be deleted too.`)) return;
+      await callAdmin({ action: "delete", user_id: p.id }); toast("Account deleted");
     }
     loadMembers();
   } catch (ex) { toast(ex.message, 4000); }
 });
 
 // ================================================================= AUDIT (admin)
-const TABLE_LABEL = { events: "日程", responses: "回复", messages: "留言", assignments: "任务", profiles: "资料", accounts: "账号" };
-const ACTION_LABEL = { INSERT: "新增", UPDATE: "修改", DELETE: "删除", LOGIN: "登录",
-  ADMIN_CREATE_USER: "创建账号", ADMIN_RESET_PASSWORD: "重置密码", ADMIN_SET_ROLE: "修改角色", ADMIN_DELETE_USER: "删除账号" };
+const TABLE_LABEL = { events: "event", responses: "response", messages: "message", assignments: "task", profiles: "profile", accounts: "account" };
+const ACTION_LABEL = { INSERT: "Created", UPDATE: "Updated", DELETE: "Deleted", LOGIN: "Signed in",
+  ADMIN_CREATE_USER: "Created account", ADMIN_RESET_PASSWORD: "Reset password", ADMIN_SET_ROLE: "Changed role", ADMIN_DELETE_USER: "Deleted account" };
 function describe(a) {
   const d = a.new_data ?? a.old_data ?? {};
   switch (a.table_name) {
     case "events": {
-      let s = `「${d.title}」 ${d.start_at ? fmtDateTime(new Date(d.start_at)) : ""}`;
+      let s = `"${d.title}" ${d.start_at ? fmtDateTime(new Date(d.start_at)) : ""}`;
       if (a.action === "UPDATE" && a.old_data) {
         const ch = ["title", "location", "dress_code", "notes", "start_at", "end_at"].filter((k) => a.old_data[k] !== a.new_data[k]);
-        if (ch.length) s += `（改动：${ch.join(", ")}）`;
+        if (ch.length) s += ` (changed: ${ch.join(", ")})`;
       }
       return s;
     }
-    case "responses": return `日程 #${d.event_id}：${STATUS[d.status]?.label ?? ""}${d.late_minutes ? ` ${d.late_minutes} 分钟` : ""}`;
-    case "messages": return `「${String(d.body ?? "").slice(0, 60)}」`;
-    case "assignments": return `「${d.title}」 ${TASK_STATUS[d.status] ?? ""}`;
-    case "profiles": return a.old_data && a.new_data ? `显示名称：${a.old_data.display_name} → ${a.new_data.display_name}` : "";
+    case "responses": return `event #${d.event_id}: ${STATUS[d.status]?.label ?? ""}${d.late_minutes ? ` ${d.late_minutes} min` : ""}`;
+    case "messages": return `"${String(d.body ?? "").slice(0, 60)}"`;
+    case "assignments": return `"${d.title}" ${TASK_STATUS[d.status] ?? ""}`;
+    case "profiles": return a.old_data && a.new_data ? `display name: ${a.old_data.display_name} → ${a.new_data.display_name}` : "";
     case "accounts": return [d.username, d.role, d.from && `${ROLE_LABEL[d.from]} → ${ROLE_LABEL[d.to]}`].filter(Boolean).join(" ");
     default: return "";
   }
@@ -700,16 +703,16 @@ async function loadAudit() {
   await loadProfiles();
   const sel = $("#audit-filter");
   const cur = sel.value;
-  sel.innerHTML = `<option value="">全部成员</option>` + [...state.profiles.values()].map((p) =>
+  sel.innerHTML = `<option value="">All members</option>` + [...state.profiles.values()].map((p) =>
     `<option value="${p.id}" ${p.id === cur ? "selected" : ""}>${esc(p.display_name)}</option>`).join("");
   let q = sb.from("audit_log").select("*").order("at", { ascending: false }).limit(500);
   if (cur) q = q.eq("actor", cur);
   const { data, error } = await q;
   if (error) return toast(friendlyError(error));
-  $("#audit-list").innerHTML = `<div class="table-wrap"><table class="table"><thead><tr><th>时间</th><th>成员</th><th>操作</th><th>内容</th></tr></thead><tbody>${
+  $("#audit-list").innerHTML = `<div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Member</th><th>Action</th><th>Details</th></tr></thead><tbody>${
     data.map((a) => `<tr><td style="white-space:nowrap">${fmtDateTime(new Date(a.at))}</td><td>${esc(a.actor_name ?? "")}</td>
       <td style="white-space:nowrap">${ACTION_LABEL[a.action] ?? a.action}${a.table_name ? " " + (TABLE_LABEL[a.table_name] ?? a.table_name) : ""}</td>
-      <td>${esc(describe(a))}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">暂无记录</td></tr>`}</tbody></table></div>`;
+      <td>${esc(describe(a))}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">No activity yet</td></tr>`}</tbody></table></div>`;
 }
 $("#audit-filter").addEventListener("change", loadAudit);
 
@@ -725,18 +728,18 @@ $("#profile-form").addEventListener("submit", async (e) => {
   const name = e.target.display_name.value.trim();
   const { error } = await sb.from("profiles").update({ display_name: name }).eq("id", state.me.id);
   if (error) { $("#profile-msg").textContent = friendlyError(error); return; }
-  await loadProfiles(); $("#profile-msg").textContent = "已保存";
+  await loadProfiles(); $("#profile-msg").textContent = "Saved";
 });
 $("#password-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const { error } = await sb.auth.updateUser({ password: e.target.password.value });
-  $("#password-msg").textContent = error ? friendlyError(error) : "密码已修改";
+  $("#password-msg").textContent = error ? friendlyError(error) : "Password changed";
   if (!error) e.target.reset();
 });
 
 // ================================================================= start
 if (SUPABASE_URL.includes("YOUR-PROJECT")) {
-  document.body.innerHTML = `<div class="login"><div class="card login-card"><h1>还差一步</h1><p>请先在 <code>config.js</code> 里填入 Supabase 的 URL 和 key。</p></div></div>`;
+  document.body.innerHTML = `<div class="login"><div class="card login-card"><h1>One more step</h1><p>Fill in the Supabase URL and key in <code>config.js</code>.</p></div></div>`;
 } else {
   sb.auth.onAuthStateChange((event) => { if (event === "SIGNED_OUT") location.reload(); });
   boot();
