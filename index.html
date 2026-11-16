@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="robots" content="noindex" />
+  <title>Team Calendar</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Login -->
+  <section id="login-view" class="login" hidden>
+    <form id="login-form" class="card login-card">
+      <h1 id="login-title">Team Calendar</h1>
+      <label>用户名 Username<input name="username" autocomplete="username" required autocapitalize="none" /></label>
+      <label>密码 Password<input name="password" type="password" autocomplete="current-password" required /></label>
+      <button class="btn primary" type="submit">登录 Sign in</button>
+      <p class="error" id="login-error"></p>
+    </form>
+  </section>
+
+  <!-- App -->
+  <section id="app-view" hidden>
+    <header class="topbar">
+      <div class="brand" id="brand">Team Calendar</div>
+      <nav class="tabs" id="tabs">
+        <button data-tab="calendar" class="active">日历</button>
+        <button data-tab="chat">留言板</button>
+        <button data-tab="tasks">任务</button>
+        <button data-tab="members" data-admin hidden>成员</button>
+        <button data-tab="audit" data-admin hidden>记录</button>
+        <button data-tab="me">我</button>
+      </nav>
+    </header>
+
+    <main>
+      <!-- Calendar -->
+      <div class="tab-panel" id="tab-calendar">
+        <div class="cal-toolbar">
+          <div class="nav-group">
+            <button class="btn icon" id="cal-prev" aria-label="上一个">‹</button>
+            <button class="btn" id="cal-today">今天</button>
+            <button class="btn icon" id="cal-next" aria-label="下一个">›</button>
+          </div>
+          <h2 id="cal-title"></h2>
+          <div class="seg" id="cal-mode">
+            <button data-mode="month" class="active">月</button>
+            <button data-mode="week">周</button>
+            <button data-mode="day">日</button>
+          </div>
+        </div>
+        <p class="hint" id="cal-hint"></p>
+        <div id="cal-body"></div>
+      </div>
+
+      <!-- Chat -->
+      <div class="tab-panel" id="tab-chat" hidden>
+        <div class="chat card">
+          <div class="chat-list" id="chat-list"></div>
+          <form class="chat-form" id="chat-form">
+            <textarea name="body" rows="1" maxlength="2000" placeholder="说点什么… (Enter 发送, Shift+Enter 换行)" required></textarea>
+            <button class="btn primary" type="submit">发送</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Tasks -->
+      <div class="tab-panel" id="tab-tasks" hidden>
+        <div class="panel-head">
+          <h2>任务 Assignments</h2>
+          <button class="btn primary" id="task-new" data-admin hidden>+ 新任务</button>
+        </div>
+        <div id="task-list"></div>
+      </div>
+
+      <!-- Members (admin) -->
+      <div class="tab-panel" id="tab-members" hidden>
+        <div class="panel-head"><h2>成员管理</h2></div>
+        <form class="card form-grid" id="member-form">
+          <h3>创建账号</h3>
+          <label>用户名<input name="username" required pattern="[a-z0-9][a-z0-9_.\-]{1,30}[a-z0-9]" title="3–32 位小写字母、数字或 . _ -" autocapitalize="none" /></label>
+          <label>初始密码<input name="password" required minlength="8" /></label>
+          <label id="member-role-wrap" hidden>角色
+            <select name="role"><option value="member">成员</option><option value="admin">管理员</option></select>
+          </label>
+          <button class="btn primary" type="submit">创建</button>
+          <p class="error" id="member-error"></p>
+        </form>
+        <div id="member-list"></div>
+      </div>
+
+      <!-- Audit (admin) -->
+      <div class="tab-panel" id="tab-audit" hidden>
+        <div class="panel-head">
+          <h2>操作记录</h2>
+          <select id="audit-filter"><option value="">全部成员</option></select>
+        </div>
+        <p class="hint">保留最近 3 个月的记录。</p>
+        <div id="audit-list"></div>
+      </div>
+
+      <!-- Me -->
+      <div class="tab-panel" id="tab-me" hidden>
+        <form class="card form-grid" id="profile-form">
+          <h3>我的资料</h3>
+          <p class="muted">账号：<b id="me-username"></b> · 角色：<span id="me-role"></span></p>
+          <label>显示名称<input name="display_name" required maxlength="40" /></label>
+          <button class="btn primary" type="submit">保存</button>
+          <p class="ok" id="profile-msg"></p>
+        </form>
+        <form class="card form-grid" id="password-form">
+          <h3>修改密码</h3>
+          <label>新密码<input name="password" type="password" minlength="8" required autocomplete="new-password" /></label>
+          <button class="btn" type="submit">修改密码</button>
+          <p class="ok" id="password-msg"></p>
+        </form>
+        <button class="btn danger" id="logout">退出登录</button>
+      </div>
+    </main>
+  </section>
+
+  <dialog id="modal"><div id="modal-body"></div></dialog>
+  <div id="toast" hidden></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
