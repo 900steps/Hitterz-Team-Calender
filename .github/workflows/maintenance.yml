@@ -1,0 +1,73 @@
+name: Maintenance
+
+# 1) Every day: ping Supabase so the free project is never paused for inactivity.
+# 2) Every Sunday: encrypted database backup (only if the backup secrets are set).
+# 3) 1st of each month: tiny commit so GitHub never disables this scheduled
+#    workflow (GitHub turns off schedules after 60 days without repo activity).
+
+on:
+  schedule:
+    - cron: "17 14 * * *"   # daily
+    - cron: "41 15 * * 0"   # weekly backup (Sunday)
+    - cron: "23 16 1 * *"   # monthly keep-workflow-alive commit
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ping Supabase
+        run: |
+          URL=$(grep -oP 'SUPABASE_URL\s*=\s*"\K[^"]+' config.js)
+          KEY=$(grep -oP 'SUPABASE_KEY\s*=\s*"\K[^"]+' config.js)
+          code=$(curl -s -o /tmp/out -w '%{http_code}' -X POST "$URL/rest/v1/rpc/keepalive" \
+                  -H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{}')
+          echo "HTTP $code: $(cat /tmp/out)"
+          test "$code" = "200"
+
+  backup:
+    if: github.event.schedule == '41 15 * * 0' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      PASS: ${{ secrets.BACKUP_PASSPHRASE }}
+    steps:
+      - name: Check secrets
+        id: chk
+        run: |
+          if [ -n "$DB_URL" ] && [ -n "$PASS" ]; then echo "go=1" >> "$GITHUB_OUTPUT"; else echo "Backup secrets not set — skipping."; fi
+      - uses: supabase/setup-cli@v1
+        if: steps.chk.outputs.go == '1'
+        with: { version: latest }
+      - name: Dump and encrypt
+        if: steps.chk.outputs.go == '1'
+        run: |
+          mkdir dump
+          supabase db dump --db-url "$DB_URL" -f dump/schema.sql
+          supabase db dump --db-url "$DB_URL" -f dump/data.sql --data-only
+          supabase db dump --db-url "$DB_URL" -f dump/auth_users.sql --data-only --schema auth
+          tar czf backup.tgz dump
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$PASS" -c -o backup-$(date +%F).tgz.gpg backup.tgz
+          rm -rf dump backup.tgz
+      - uses: actions/upload-artifact@v4
+        if: steps.chk.outputs.go == '1'
+        with:
+          name: db-backup
+          path: backup-*.tgz.gpg
+          retention-days: 90
+
+  keep-workflow-alive:
+    if: github.event.schedule == '23 16 1 * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          date -u +%FT%TZ > .github/last-maintenance
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/last-maintenance
+          git commit -m "chore: monthly keep-alive" && git push
