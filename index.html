@@ -27,6 +27,7 @@
         <button data-tab="calendar" class="active">Calendar</button>
         <button data-tab="chat">Message board</button>
         <button data-tab="tasks">Tasks</button>
+        <button data-tab="polls">Polls</button>
         <button data-tab="members" data-admin hidden>Members</button>
         <button data-tab="audit" data-admin hidden>Activity log</button>
         <button data-tab="me">Me</button>
@@ -71,6 +72,15 @@
           <button class="btn primary" id="task-new" data-admin hidden>+ New task</button>
         </div>
         <div id="task-list"></div>
+      </div>
+
+      <!-- Polls -->
+      <div class="tab-panel" id="tab-polls" hidden>
+        <div class="panel-head">
+          <h2>Polls</h2>
+          <button class="btn primary" id="poll-new">+ New poll</button>
+        </div>
+        <div id="poll-list"></div>
       </div>
 
       <!-- Members (admin) -->

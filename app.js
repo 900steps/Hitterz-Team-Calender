@@ -126,7 +126,7 @@ function showTab(tab) {
   state.tab = tab;
   $$("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   $$(".tab-panel").forEach((p) => (p.hidden = p.id !== `tab-${tab}`));
-  ({ calendar: renderCalendar, chat: loadChat, tasks: loadTasks, members: loadMembers, audit: loadAudit, me: renderMe })[tab]();
+  ({ calendar: renderCalendar, chat: loadChat, tasks: loadTasks, polls: loadPolls, members: loadMembers, audit: loadAudit, me: renderMe })[tab]();
 }
 
 // ---------------------------------------------------------------- realtime
@@ -138,6 +138,8 @@ function subscribeRealtime() {
     .on("postgres_changes", { event: "*", schema: "public", table: "events" }, refreshCal)
     .on("postgres_changes", { event: "*", schema: "public", table: "responses" }, refreshCal)
     .on("postgres_changes", { event: "*", schema: "public", table: "assignments" }, () => state.tab === "tasks" && loadTasks())
+    .on("postgres_changes", { event: "*", schema: "public", table: "polls" }, refreshPolls)
+    .on("postgres_changes", { event: "*", schema: "public", table: "poll_votes" }, refreshPolls)
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (p) => onNewMessage(p.new))
     .on("postgres_changes", { event: "DELETE", schema: "public", table: "messages" }, (p) => {
       const el = document.querySelector(`.msg[data-id="${p.old.id}"]`); el?.remove();
@@ -625,6 +627,155 @@ function openTaskForm(t) {
   });
 }
 
+// ================================================================= POLLS
+let pollsCache = new Map();   // id -> poll with .options and .votes
+let pollTimer;
+function refreshPolls() {
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(() => state.tab === "polls" && loadPolls(), 300);
+}
+async function fetchPolls() {
+  const { data: polls, error } = await sb.from("polls").select("*").order("created_at", { ascending: false }).limit(100);
+  if (error) { toast(friendlyError(error)); return null; }
+  const ids = polls.map((p) => p.id);
+  let options = [], votes = [];
+  if (ids.length) {
+    const [o, v] = await Promise.all([
+      sb.from("poll_options").select("*").in("poll_id", ids).order("position"),
+      sb.from("poll_votes").select("*").in("poll_id", ids).order("created_at"),
+    ]);
+    options = o.data ?? []; votes = v.data ?? [];
+  }
+  pollsCache = new Map(polls.map((p) => [p.id, {
+    ...p,
+    options: options.filter((o) => o.poll_id === p.id).sort((a, b) => a.position - b.position),
+    votes: votes.filter((v) => v.poll_id === p.id),
+  }]));
+  return [...pollsCache.values()];
+}
+async function loadPolls() {
+  const polls = await fetchPolls();
+  if (!polls) return;
+  if (!state.profiles.size || polls.some((p) => p.votes.some((v) => !state.profiles.has(v.user_id)))) await loadProfiles();
+  const open = polls.filter((p) => !p.closed), closed = polls.filter((p) => p.closed);
+  const list = $("#poll-list");
+  const openDetails = new Set($$("details.poll-grid[open]", list).map((d) => d.dataset.poll));
+  list.innerHTML = polls.length
+    ? open.map(pollCard).join("") + (closed.length ? `<h3 class="poll-section">Closed polls</h3>` + closed.map(pollCard).join("") : "")
+    : `<p class="muted">No polls yet. Click "+ New poll" to start one.</p>`;
+  openDetails.forEach((id) => { const d = $(`details.poll-grid[data-poll="${id}"]`, list); if (d) d.open = true; });
+}
+function pollCard(p) {
+  const me = state.me.id;
+  const voters = new Set(p.votes.map((v) => v.user_id));
+  const maxCount = Math.max(1, ...p.options.map((o) => p.votes.filter((v) => v.option_id === o.id).length));
+  const canManage = p.created_by === me || isAdmin();
+  const people = [...state.profiles.values()].sort((a, b) => a.display_name.localeCompare(b.display_name));
+  const opts = p.options.map((o) => {
+    const vs = p.votes.filter((v) => v.option_id === o.id);
+    const mine = vs.some((v) => v.user_id === me);
+    const pct = Math.round((vs.length / maxCount) * 100);
+    return `<div class="poll-opt ${mine ? "mine" : ""} ${p.closed ? "closed" : ""}" data-poll="${p.id}" data-opt="${o.id}" role="button" tabindex="0">
+      <div class="poll-bar" style="width:${vs.length ? pct : 0}%"></div>
+      <div class="poll-row">
+        <span class="poll-check ${p.multi ? "box" : "radio"}">${mine ? "✓" : ""}</span>
+        <span class="poll-label">${esc(o.label)}</span>
+        <span class="poll-count">${vs.length}</span>
+      </div>
+      ${vs.length ? `<div class="poll-names">${vs.map((v) => `<span class="name-chip ${v.user_id === me ? "me" : ""}">${esc(nameOf(v.user_id))}</span>`).join("")}</div>` : ""}
+    </div>`;
+  }).join("");
+  const grid = `<div class="table-wrap"><table class="grid-table"><thead><tr><th></th>${
+    p.options.map((o) => `<th title="${esc(o.label)}">${esc(o.label)}</th>`).join("")}</tr></thead><tbody>${
+    people.filter((u) => voters.has(u.id)).map((u) => `<tr><td class="who-cell">${esc(u.display_name)}</td>${
+      p.options.map((o) => p.votes.some((v) => v.option_id === o.id && v.user_id === u.id)
+        ? `<td class="cell on">✓</td>` : `<td class="cell"></td>`).join("")}</tr>`).join("")
+    }<tr class="total"><td class="who-cell">Total</td>${p.options.map((o) =>
+      `<td class="cell">${p.votes.filter((v) => v.option_id === o.id).length}</td>`).join("")}</tr></tbody></table></div>`;
+  return `<div class="card poll" data-poll-card="${p.id}">
+    <div class="poll-head">
+      <div>
+        <h3>${esc(p.question)}</h3>
+        <div class="muted">${esc(nameOf(p.created_by))} · ${fmtDateTime(new Date(p.created_at))} · ${p.multi ? "Pick any" : "Pick one"} · ${voters.size} voted</div>
+      </div>
+      ${p.closed ? `<span class="badge">Closed</span>` : ""}
+    </div>
+    <div class="poll-opts">${opts}</div>
+    <details class="poll-grid" data-poll="${p.id}"><summary>Who picked what (grid)</summary>${voters.size ? grid : `<p class="muted">No votes yet.</p>`}</details>
+    ${canManage ? `<div class="actions">
+      <button class="btn small" data-poll-act="toggle" data-id="${p.id}">${p.closed ? "Reopen" : "Close poll"}</button>
+      <button class="btn small danger" data-poll-act="delete" data-id="${p.id}">Delete</button></div>` : ""}
+  </div>`;
+}
+async function votePoll(pollId, optionId) {
+  const p = pollsCache.get(pollId);
+  if (!p) return;
+  if (p.closed) { toast("This poll is closed"); return; }
+  const mine = p.votes.some((v) => v.option_id === optionId && v.user_id === state.me.id);
+  const { error } = mine
+    ? await sb.from("poll_votes").delete().eq("option_id", optionId).eq("user_id", state.me.id)
+    : await sb.from("poll_votes").insert({ poll_id: pollId, option_id: optionId });
+  if (error) return toast(friendlyError(error));
+  loadPolls();
+}
+$("#poll-list").addEventListener("click", async (e) => {
+  const act = e.target.closest("[data-poll-act]");
+  if (act) {
+    const p = pollsCache.get(Number(act.dataset.id));
+    if (act.dataset.pollAct === "toggle") {
+      const { error } = await sb.from("polls").update({ closed: !p.closed }).eq("id", p.id);
+      if (error) return toast(friendlyError(error));
+      toast(p.closed ? "Poll reopened" : "Poll closed");
+    } else {
+      if (!confirm(`Delete the poll "${p.question}"? All votes will be deleted too.`)) return;
+      const { error } = await sb.from("polls").delete().eq("id", p.id);
+      if (error) return toast(friendlyError(error));
+      toast("Poll deleted");
+    }
+    return loadPolls();
+  }
+  const opt = e.target.closest(".poll-opt");
+  if (opt) votePoll(Number(opt.dataset.poll), Number(opt.dataset.opt));
+});
+$("#poll-list").addEventListener("keydown", (e) => {
+  const opt = e.target.closest?.(".poll-opt");
+  if (opt && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); votePoll(Number(opt.dataset.poll), Number(opt.dataset.opt)); }
+});
+$("#poll-new").addEventListener("click", () => {
+  const optInput = (v = "") => `<div class="opt-row"><input name="opt" maxlength="200" placeholder="Option" value="${esc(v)}" /><button type="button" class="btn small opt-del" aria-label="Remove option">×</button></div>`;
+  openModal(`
+    <div class="modal-head"><h2>New poll</h2><button class="close-x" aria-label="Close">×</button></div>
+    <form id="poll-form" class="form-grid" style="max-width:none;margin:0">
+      <label>Question *<input name="question" required maxlength="300" placeholder="e.g. Which day works for dinner?" /></label>
+      <div><div class="muted" style="margin-bottom:6px">Options (at least 2)</div>
+        <div id="opt-list">${optInput()}${optInput()}</div>
+        <button type="button" class="btn small" id="opt-add" style="margin-top:8px">+ Add option</button>
+      </div>
+      <label class="check"><input type="checkbox" name="multi" checked /> Allow picking more than one option</label>
+      <p class="error" id="poll-error"></p>
+      <div class="actions"><button type="button" class="btn" id="poll-cancel">Cancel</button><button class="btn primary" type="submit">Create poll</button></div>
+    </form>`);
+  const listEl = $("#opt-list");
+  const syncDel = () => $$(".opt-del", listEl).forEach((b) => (b.disabled = $$(".opt-row", listEl).length <= 2));
+  syncDel();
+  $("#opt-add").onclick = () => { listEl.insertAdjacentHTML("beforeend", optInput()); syncDel(); $$("input", listEl).at(-1).focus(); };
+  listEl.onclick = (e) => { const b = e.target.closest(".opt-del"); if (b && !b.disabled) { b.closest(".opt-row").remove(); syncDel(); } };
+  listEl.onkeydown = (e) => {
+    if (e.key === "Enter" && e.target.name === "opt") { e.preventDefault(); $("#opt-add").click(); }
+  };
+  $("#poll-cancel").onclick = closeModal;
+  $("#poll-form").onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target, err = $("#poll-error");
+    const options = $$("input[name=opt]", listEl).map((i) => i.value.trim()).filter(Boolean);
+    if (options.length < 2) { err.textContent = "Please enter at least 2 options."; return; }
+    if (new Set(options.map((o) => o.toLowerCase())).size !== options.length) { err.textContent = "Options must all be different."; return; }
+    const { error } = await sb.rpc("create_poll", { p_question: f.question.value.trim(), p_options: options, p_multi: f.multi.checked });
+    if (error) { err.textContent = friendlyError(error); return; }
+    closeModal(); toast("Poll created"); loadPolls();
+  };
+});
+
 // ================================================================= MEMBERS (admin)
 async function callAdmin(payload) {
   const { data, error } = await sb.functions.invoke("admin-users", { body: payload });
@@ -677,7 +828,7 @@ $("#member-list").addEventListener("click", async (e) => {
 });
 
 // ================================================================= AUDIT (admin)
-const TABLE_LABEL = { events: "event", responses: "response", messages: "message", assignments: "task", profiles: "profile", accounts: "account" };
+const TABLE_LABEL = { events: "event", responses: "response", messages: "message", assignments: "task", profiles: "profile", accounts: "account", polls: "poll", poll_votes: "vote" };
 const ACTION_LABEL = { INSERT: "Created", UPDATE: "Updated", DELETE: "Deleted", LOGIN: "Signed in",
   ADMIN_CREATE_USER: "Created account", ADMIN_RESET_PASSWORD: "Reset password", ADMIN_SET_ROLE: "Changed role", ADMIN_DELETE_USER: "Deleted account" };
 function describe(a) {
@@ -694,6 +845,16 @@ function describe(a) {
     case "responses": return `event #${d.event_id}: ${STATUS[d.status]?.label ?? ""}${d.late_minutes ? ` ${d.late_minutes} min` : ""}`;
     case "messages": return `"${String(d.body ?? "").slice(0, 60)}"`;
     case "assignments": return `"${d.title}" ${TASK_STATUS[d.status] ?? ""}`;
+    case "polls": {
+      if (a.action === "UPDATE" && a.old_data && a.old_data.closed !== a.new_data.closed)
+        return `"${d.question}" ${a.new_data.closed ? "closed" : "reopened"}`;
+      return `"${d.question}"`;
+    }
+    case "poll_votes": {
+      const p = pollsCache.get(d.poll_id);
+      const opt = p?.options.find((o) => o.id === d.option_id);
+      return p ? `"${p.question}": ${opt ? opt.label : "option #" + d.option_id}` : `poll #${d.poll_id}, option #${d.option_id}`;
+    }
     case "profiles": return a.old_data && a.new_data ? `display name: ${a.old_data.display_name} → ${a.new_data.display_name}` : "";
     case "accounts": return [d.username, d.role, d.from && `${ROLE_LABEL[d.from]} → ${ROLE_LABEL[d.to]}`].filter(Boolean).join(" ");
     default: return "";
@@ -701,6 +862,7 @@ function describe(a) {
 }
 async function loadAudit() {
   await loadProfiles();
+  if (!pollsCache.size) await fetchPolls();
   const sel = $("#audit-filter");
   const cur = sel.value;
   sel.innerHTML = `<option value="">All members</option>` + [...state.profiles.values()].map((p) =>

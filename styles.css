@@ -207,3 +207,46 @@ details.who summary { cursor: pointer; font-size: .9rem; }
   .chat { height: calc(100vh - 130px); }
   .row2 { grid-template-columns: 1fr; }
 }
+
+/* Polls */
+.poll { display: grid; gap: 10px; margin-bottom: 14px; }
+.poll-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.poll-head h3 { font-size: 1.05rem; margin-bottom: 2px; }
+.poll-opts { display: grid; gap: 8px; }
+.poll-opt {
+  position: relative; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+  cursor: pointer; overflow: hidden; user-select: none;
+}
+.poll-opt:hover { border-color: var(--accent); }
+.poll-opt.closed { cursor: default; }
+.poll-opt.closed:hover { border-color: var(--line); }
+.poll-opt.mine { border-color: var(--accent); }
+.poll-bar { position: absolute; inset: 0 auto 0 0; background: var(--accent-soft); transition: width .2s; z-index: 0; }
+.poll-row, .poll-names { position: relative; z-index: 1; }
+.poll-row { display: flex; align-items: center; gap: 10px; }
+.poll-label { flex: 1; word-break: break-word; }
+.poll-count { font-weight: 600; color: var(--muted); }
+.poll-check {
+  width: 20px; height: 20px; flex: none; border: 2px solid var(--line); display: grid; place-items: center;
+  font-size: .75rem; font-weight: 700; color: #fff; background: var(--card);
+}
+.poll-check.box { border-radius: 5px; }
+.poll-check.radio { border-radius: 50%; }
+.poll-opt.mine .poll-check { background: var(--accent); border-color: var(--accent); }
+.poll-names { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 0 30px; }
+.name-chip { font-size: .75rem; padding: 2px 8px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); }
+.name-chip.me { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.poll-notvoted { font-size: .8rem; }
+.poll-section { color: var(--muted); font-size: .85rem; margin: 20px 0 10px; }
+details.poll-grid summary { cursor: pointer; font-size: .85rem; color: var(--accent); }
+.grid-table { border-collapse: collapse; margin-top: 8px; font-size: .82rem; }
+.grid-table th { font-weight: 500; color: var(--muted); padding: 4px 6px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grid-table td { border: 1px solid var(--line-soft); }
+.grid-table .who-cell { padding: 4px 10px 4px 0; border: 0; white-space: nowrap; }
+.grid-table .cell { width: 64px; height: 28px; text-align: center; color: #fff; }
+.grid-table .cell.on { background: var(--going); }
+.grid-table tr.total .cell { color: var(--muted); font-weight: 600; border: 0; }
+.opt-row { display: flex; gap: 6px; margin-bottom: 6px; }
+.opt-row .btn { flex: none; }
+label.check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: .9rem; }
+label.check input { width: auto; }
